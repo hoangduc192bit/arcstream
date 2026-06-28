@@ -16,6 +16,7 @@ type Status = "idle" | "adding" | "added" | "error";
 export function AddNetworkButton() {
   const [status, setStatus] = useState<Status>("idle");
   const [hasMetaMask, setHasMetaMask] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     setHasMetaMask(
@@ -27,6 +28,7 @@ export function AddNetworkButton() {
 
   const handleAdd = async () => {
     setStatus("adding");
+    setErrorMessage(null);
     try {
       const ethereum = (window as any).ethereum;
       try {
@@ -35,18 +37,33 @@ export function AddNetworkButton() {
           params: [{ chainId: ARC_TESTNET.chainId }],
         });
       } catch (switchError: any) {
-        if (switchError.code !== 4902) throw switchError;
-        await ethereum.request({
-          method: "wallet_addEthereumChain",
-          params: [ARC_TESTNET],
-        });
+        console.warn("wallet_switchEthereumChain failed, trying wallet_addEthereumChain. Error:", switchError);
+        // 4902 is the standard code. Some wallets return "Unrecognized chain ID" message.
+        if (
+          switchError.code === 4902 || 
+          (switchError.message && switchError.message.toLowerCase().includes("unrecognized"))
+        ) {
+          await ethereum.request({
+            method: "wallet_addEthereumChain",
+            params: [ARC_TESTNET],
+          });
+        } else {
+          throw switchError;
+        }
       }
       setStatus("added");
     } catch (err: any) {
+      console.error("Failed to add Arc Testnet:", err);
       if (err.code === 4001) {
         setStatus("idle");
       } else {
         setStatus("error");
+        setErrorMessage(err.message || "MetaMask rejected the request.");
+        // Reset back to idle after 4 seconds to allow retry
+        setTimeout(() => {
+          setStatus("idle");
+          setErrorMessage(null);
+        }, 4000);
       }
     }
   };
@@ -63,36 +80,41 @@ export function AddNetworkButton() {
     );
   }
 
-  if (status === "error") {
-    return (
-      <div
-        className="flex items-center gap-1.5 max-w-[240px] h-9 px-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-700 text-[12px] font-medium"
-        style={{ fontFamily: "var(--font-inter, Inter, sans-serif)" }}
-      >
-        <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-        Remove old Arc Testnet, then retry
-      </div>
-    );
-  }
-
   return (
-    <button
-      onClick={handleAdd}
-      disabled={status === "adding"}
-      className="flex items-center gap-1.5 h-9 px-3.5 rounded-xl border border-gray-200 bg-white text-neutral-600 text-[13px] font-semibold hover:border-[#0084FF] hover:text-[#0084FF] hover:bg-blue-50 transition-all disabled:opacity-60"
-      style={{ fontFamily: "var(--font-inter, Inter, sans-serif)" }}
-    >
-      {status === "adding" ? (
-        <>
-          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          Adding...
-        </>
-      ) : (
-        <>
-          <Plus className="w-3.5 h-3.5" />
-          Arc Testnet
-        </>
+    <div className="flex flex-col items-start gap-1 relative">
+      <button
+        onClick={handleAdd}
+        disabled={status === "adding"}
+        className={`flex items-center gap-1.5 h-9 px-3.5 rounded-xl border text-[13px] font-semibold transition-all disabled:opacity-60 ${
+          status === "error"
+            ? "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100/50"
+            : "border-gray-200 bg-white text-neutral-600 hover:border-[#0084FF] hover:text-[#0084FF] hover:bg-blue-50"
+        }`}
+        style={{ fontFamily: "var(--font-inter, Inter, sans-serif)" }}
+        type="button"
+      >
+        {status === "adding" ? (
+          <>
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            Adding...
+          </>
+        ) : status === "error" ? (
+          <>
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+            Network Conflict (Retry)
+          </>
+        ) : (
+          <>
+            <Plus className="w-3.5 h-3.5" />
+            Arc Testnet
+          </>
+        )}
+      </button>
+      {errorMessage && (
+        <span className="absolute top-[38px] left-0 text-[10px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5 shadow-md z-50 whitespace-nowrap max-w-[280px] truncate">
+          {errorMessage}
+        </span>
       )}
-    </button>
+    </div>
   );
 }
