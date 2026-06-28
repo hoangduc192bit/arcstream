@@ -247,6 +247,58 @@ export function ResearchAgentDemo() {
 
   async function runAgent() {
     if (!topic.trim()) return;
+
+    // Check for scheduling intent keywords (Vietnamese & English)
+    const isSchedulingKeyword = /cứ vào|mỗi ngày|hàng ngày|every day|hẹn giờ|lên lịch/i.test(topic);
+    if (isSchedulingKeyword) {
+      setPhase("running");
+      setVisibleSteps([]);
+      setReport(null);
+      setError(null);
+      setAccruedCost(0);
+      setRunningLog([
+        "Analyzing scheduling intent with Google Gemini...",
+        `Prompt: "${topic}"`,
+      ]);
+
+      try {
+        const scheduleRes = await fetch("/api/agent/schedule", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: topic }),
+        });
+
+        if (scheduleRes.ok) {
+          const parsedSchedule = await scheduleRes.json();
+          if (parsedSchedule.isSchedule) {
+            // Save to localStorage
+            const savedSchedules = localStorage.getItem("arcstream_schedules");
+            const list = savedSchedules ? JSON.parse(savedSchedules) : [];
+            const newSchedule = {
+              id: Math.random().toString(36).substring(2, 9),
+              agentId: activeAgent ? activeAgent.id : "default",
+              agentName: activeAgent ? activeAgent.name : "Default Agent",
+              subject: parsedSchedule.subject || "AI Report",
+              cronExpression: parsedSchedule.cronExpression || "0 5 * * *",
+              humanReadable: parsedSchedule.humanReadable || "Hàng ngày vào lúc 5:00 UTC",
+              destinations: parsedSchedule.destinations || ["Gmail", "Telegram"],
+              status: "active",
+              createdAt: new Date().toISOString(),
+            };
+            localStorage.setItem("arcstream_schedules", JSON.stringify([...list, newSchedule]));
+            window.dispatchEvent(new Event("schedulesChanged"));
+
+            setPhase("idle");
+            alert(`🎉 Hẹn giờ thành công!\n\nNhiệm vụ: "${newSchedule.subject}"\nTần suất: ${newSchedule.humanReadable}\nKênh nhận: ${newSchedule.destinations.join(", ")}`);
+            setTopic("");
+            return;
+          }
+        }
+      } catch (err) {
+        console.error("Failed to parse scheduling intent:", err);
+      }
+    }
+
     setPhase("running");
     setVisibleSteps([]);
     setReport(null);

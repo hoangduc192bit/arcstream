@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { WalletCards, Plus, Loader2, Coins, Trash2, CheckCircle2, User } from "lucide-react";
+import { WalletCards, Plus, Loader2, Coins, Trash2, CheckCircle2, User, Calendar } from "lucide-react";
 import { useAccount, useWriteContract } from "wagmi";
 import { parseUnits, formatUnits, type Address } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
@@ -33,6 +33,18 @@ function shortAddress(address?: string) {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
+interface Schedule {
+  id: string;
+  agentId: string;
+  agentName: string;
+  subject: string;
+  cronExpression: string;
+  humanReadable: string;
+  destinations: string[];
+  status: "active" | "paused";
+  createdAt: string;
+}
+
 export function PlaygroundWalletPanel() {
   const { address, isConnected } = useAccount();
   const { writeContract, data: txHash } = useWriteContract();
@@ -46,6 +58,47 @@ export function PlaygroundWalletPanel() {
   
   const [creating, setCreating] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  const [subTab, setSubTab] = useState<"wallets" | "schedules">("wallets");
+  const [schedules, setSchedules] = useState<Schedule[]>([]);
+
+  const loadSchedules = () => {
+    const saved = localStorage.getItem("arcstream_schedules");
+    if (saved) {
+      try {
+        setSchedules(JSON.parse(saved));
+      } catch (e) {
+        console.error(e);
+      }
+    } else {
+      setSchedules([]);
+    }
+  };
+
+  useEffect(() => {
+    loadSchedules();
+    window.addEventListener("schedulesChanged", loadSchedules);
+    return () => {
+      window.removeEventListener("schedulesChanged", loadSchedules);
+    };
+  }, []);
+
+  const toggleScheduleStatus = (id: string) => {
+    const updated: Schedule[] = schedules.map((s) => {
+      if (s.id === id) {
+        return { ...s, status: (s.status === "active" ? "paused" : "active") as "active" | "paused" };
+      }
+      return s;
+    });
+    setSchedules(updated);
+    localStorage.setItem("arcstream_schedules", JSON.stringify(updated));
+  };
+
+  const deleteSchedule = (id: string) => {
+    const updated = schedules.filter((s) => s.id !== id);
+    setSchedules(updated);
+    localStorage.setItem("arcstream_schedules", JSON.stringify(updated));
+  };
 
   // Load agents on mount
   useEffect(() => {
@@ -264,167 +317,271 @@ export function PlaygroundWalletPanel() {
             onClick={() => refreshBalances()}
             disabled={refreshing}
             className="px-3 py-1.5 rounded-full border border-gray-200 text-[11px] font-semibold text-neutral-500 hover:bg-gray-50 transition-all disabled:opacity-50"
+            type="button"
           >
             {refreshing ? "Refreshing..." : "Refresh balances"}
           </button>
         </div>
 
-        {/* Create Agent form */}
-        <form onSubmit={createAgent} className="flex flex-col gap-3.5 p-4 rounded-2xl bg-neutral-50 border border-neutral-100 mb-6">
-          <div className="flex flex-wrap gap-2.5 items-end w-full">
-            <div className="flex-1 min-w-[200px]">
-              <label className="block text-[10px] font-bold uppercase text-neutral-400 mb-1">Agent Name</label>
-              <input
-                type="text"
-                required
-                disabled={creating}
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="e.g. CEO printing assistant, Crypto Scout Bot..."
-                className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-[13px] text-neutral-800 outline-none focus:border-[#0084FF]"
-              />
+        {/* Sub-tab selection */}
+        <div className="flex gap-4 border-b border-gray-100 mb-5 pb-1">
+          <button
+            onClick={() => setSubTab("wallets")}
+            className={`pb-2 text-[13px] font-bold transition-all relative cursor-pointer ${
+              subTab === "wallets" ? "text-[#0084FF]" : "text-neutral-400 hover:text-neutral-600"
+            }`}
+            type="button"
+          >
+            Ví Multi-Agent
+            {subTab === "wallets" && (
+              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#0084FF] rounded-full" />
+            )}
+          </button>
+          <button
+            onClick={() => setSubTab("schedules")}
+            className={`pb-2 text-[13px] font-bold transition-all relative flex items-center gap-1.5 cursor-pointer ${
+              subTab === "schedules" ? "text-[#0084FF]" : "text-neutral-400 hover:text-neutral-600"
+            }`}
+            type="button"
+          >
+            Lịch trình tự động (Cron)
+            {schedules.length > 0 && (
+              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-blue-100 text-[10px] text-[#0084FF] font-bold">
+                {schedules.length}
+              </span>
+            )}
+            {subTab === "schedules" && (
+              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#0084FF] rounded-full" />
+            )}
+          </button>
+        </div>
+
+        {subTab === "schedules" ? (
+          schedules.length === 0 ? (
+            <div className="text-center py-10 border-2 border-dashed border-gray-100 rounded-2xl">
+              <Calendar className="w-8 h-8 text-neutral-300 mx-auto mb-2" />
+              <div className="text-[13px] font-medium text-neutral-500">Chưa có lịch trình nào được thiết lập</div>
+              <div className="text-[11px] text-neutral-400 mt-1 max-w-[280px] mx-auto leading-relaxed">
+                Hãy nhập câu lệnh hẹn giờ trong ô nhập tác vụ (ví dụ: "Cứ vào 5h UTC hàng ngày...") để lên lịch tự động.
+              </div>
             </div>
-            <div className="w-[130px]">
-              <label className="block text-[10px] font-bold uppercase text-neutral-400 mb-1">Role / Persona</label>
-              <select
-                disabled={creating}
-                value={newPersona}
-                onChange={(e) => setNewPersona(e.target.value as "business" | "web3" | "social")}
-                className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-[13px] text-neutral-800 outline-none focus:border-[#0084FF] cursor-pointer"
-              >
-                <option value="business">💼 Business</option>
-                <option value="web3">🌐 Web3</option>
-                <option value="social">📝 Social</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="w-full">
-            <label className="block text-[10px] font-bold uppercase text-neutral-400 mb-1">
-              Custom instructions / Training prompt (e.g. perspectives, rules)
-            </label>
-            <textarea
-              disabled={creating}
-              value={newInstructions}
-              onChange={(e) => setNewInstructions(e.target.value)}
-              placeholder="e.g. You are the CEO of a printing factory. Focus all SWOT analyses on raw paper costs, packaging trends, and offset printing efficiency..."
-              rows={2}
-              className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-[13px] text-neutral-800 outline-none focus:border-[#0084FF] resize-none"
-            />
-          </div>
-
-          <div className="flex justify-end w-full">
-            <button
-              type="submit"
-              disabled={creating}
-              className="h-9 px-4 rounded-xl bg-[#0084FF] text-white text-[12px] font-bold flex items-center gap-1.5 hover:bg-[#0073E6] transition-all disabled:opacity-50 cursor-pointer"
-            >
-              {creating ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  Registering...
-                </>
-              ) : (
-                <>
-                  <Plus className="w-3.5 h-3.5" />
-                  Create Agent
-                </>
-              )}
-            </button>
-          </div>
-        </form>
-
-        {/* Agents Grid List */}
-        {agents.length === 0 ? (
-          <div className="text-center py-10 border-2 border-dashed border-gray-100 rounded-2xl">
-            <User className="w-8 h-8 text-neutral-300 mx-auto mb-2" />
-            <div className="text-[13px] font-medium text-neutral-500">No agents registered yet</div>
-            <div className="text-[11px] text-neutral-400 mt-0.5">Use the form above to deploy your first Agent Wallet</div>
-          </div>
-        ) : (
-          <div className="grid gap-3">
-            {agents.map((agent) => {
-              const active = activeAgentId === agent.id;
-              const hasBalance = parseFloat(agent.balanceUsdc) > 0;
-              
-              return (
+          ) : (
+            <div className="grid gap-3 max-h-[350px] overflow-y-auto pr-1">
+              {schedules.map((sch) => (
                 <div
-                  key={agent.id}
-                  onClick={() => selectActive(agent)}
-                  className={`flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl border transition-all cursor-pointer ${
-                    active
-                      ? "border-[#0084FF] bg-blue-50/20 shadow-sm ring-1 ring-blue-500/10"
-                      : "border-gray-100 bg-white hover:border-gray-200"
-                  }`}
+                  key={sch.id}
+                  className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl border border-gray-100 bg-white hover:border-gray-200 transition-all shadow-[0_2px_8px_rgba(0,0,0,0.02)]"
                 >
                   <div className="flex items-center gap-3">
                     <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-[14px] ${
-                      active ? "bg-[#0084FF] text-white" : "bg-neutral-100 text-neutral-500"
+                      sch.status === "active" ? "bg-blue-50 text-[#0084FF]" : "bg-neutral-100 text-neutral-400"
                     }`}>
-                      {agent.persona === "business" ? "💼" : agent.persona === "web3" ? "🌐" : "📝"}
+                      ⏰
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="text-[14px] font-bold text-neutral-800 leading-tight">{agent.name}</span>
-                        {active && (
-                          <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[9px] font-bold text-emerald-600">
-                            <CheckCircle2 className="w-2.5 h-2.5" /> Active Run
-                          </span>
-                        )}
+                        <span className="text-[14px] font-bold text-neutral-800 leading-tight">{sch.subject}</span>
+                        <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${
+                          sch.status === "active"
+                            ? "bg-emerald-50 border border-emerald-100 text-emerald-600"
+                            : "bg-neutral-100 border border-neutral-200 text-neutral-500"
+                        }`}>
+                          {sch.status === "active" ? "Đang chạy" : "Tạm dừng"}
+                        </span>
                       </div>
-                      <div className="text-[11px] font-mono text-neutral-400 mt-1">
-                        Wallet: {agent.address}
+                      <div className="text-[11px] text-neutral-500 mt-1 leading-none">
+                        Tần suất: <span className="font-semibold text-neutral-700">{sch.humanReadable}</span> • Cron: <span className="font-mono text-neutral-400">{sch.cronExpression}</span>
                       </div>
-                      {agent.instructions && (
-                        <div className="text-[11px] text-neutral-500 italic mt-1 max-w-[280px] sm:max-w-[400px] truncate">
-                          Prompt: {agent.instructions}
-                        </div>
-                      )}
+                      <div className="text-[10px] text-neutral-400 mt-1.5">
+                        Chạy bởi Agent: <span className="font-semibold text-neutral-600">{sch.agentName}</span> • Nhận qua: <span className="font-semibold text-neutral-600">{sch.destinations.join(", ")}</span>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-4">
-                    {/* Metrics */}
-                    <div className="flex gap-3">
-                      <div className="text-right">
-                        <div className="text-[9px] font-bold uppercase text-neutral-400">Balance</div>
-                        <div className="text-[13px] font-bold text-neutral-700">
-                          {agent.balanceUsdc} USDC
-                        </div>
-                      </div>
-                      <div className="text-right border-l pl-3">
-                        <div className="text-[9px] font-bold uppercase text-neutral-400">Daily Cap</div>
-                        <div className="text-[13px] font-bold text-neutral-700">
-                          {agent.remainingBudget} / 5.00 Left
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        onClick={() => fundAgent(agent)}
-                        className={`px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 transition-all ${
-                          hasBalance
-                            ? "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
-                            : "bg-[#0084FF]/10 text-[#0084FF] hover:bg-[#0084FF]/20"
-                        }`}
-                      >
-                        <Coins className="w-3.5 h-3.5" />
-                        Top Up
-                      </button>
-                      <button
-                        onClick={() => deleteAgent(agent.id)}
-                        className="p-2 rounded-xl text-neutral-400 hover:bg-red-50 hover:text-red-500 transition-all"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                  {/* Actions */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => toggleScheduleStatus(sch.id)}
+                      className={`px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all ${
+                        sch.status === "active"
+                          ? "bg-amber-50 text-amber-600 hover:bg-amber-100/50"
+                          : "bg-emerald-50 text-emerald-600 hover:bg-emerald-100/50"
+                      }`}
+                      type="button"
+                    >
+                      {sch.status === "active" ? "Tạm dừng" : "Kích hoạt"}
+                    </button>
+                    <button
+                      onClick={() => deleteSchedule(sch.id)}
+                      className="p-2 rounded-xl text-neutral-400 hover:bg-red-50 hover:text-red-500 transition-all cursor-pointer"
+                      type="button"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          )
+        ) : (
+          <>
+            {/* Create Agent form */}
+            <form onSubmit={createAgent} className="flex flex-col gap-3.5 p-4 rounded-2xl bg-neutral-50 border border-neutral-100 mb-6">
+              <div className="flex flex-wrap gap-2.5 items-end w-full">
+                <div className="flex-1 min-w-[200px]">
+                  <label className="block text-[10px] font-bold uppercase text-neutral-400 mb-1">Agent Name</label>
+                  <input
+                    type="text"
+                    required
+                    disabled={creating}
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    placeholder="e.g. CEO printing assistant, Crypto Scout Bot..."
+                    className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-[13px] text-neutral-800 outline-none focus:border-[#0084FF]"
+                  />
+                </div>
+                <div className="w-[130px]">
+                  <label className="block text-[10px] font-bold uppercase text-neutral-400 mb-1">Role / Persona</label>
+                  <select
+                    disabled={creating}
+                    value={newPersona}
+                    onChange={(e) => setNewPersona(e.target.value as "business" | "web3" | "social")}
+                    className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-[13px] text-neutral-800 outline-none focus:border-[#0084FF] cursor-pointer"
+                  >
+                    <option value="business">💼 Business</option>
+                    <option value="web3">🌐 Web3 Analyst</option>
+                    <option value="social">📝 Social Writer</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-neutral-400 mb-1">Custom instructions / Training prompt (e.g. perspectives, rules)</label>
+                <textarea
+                  disabled={creating}
+                  value={newInstructions}
+                  onChange={(e) => setNewInstructions(e.target.value)}
+                  placeholder="e.g. You are the CEO of a printing factory. Focus all SWOT analyses on raw paper costs, packaging trends, and offset printing efficiency..."
+                  rows={2}
+                  className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-[13px] text-neutral-800 outline-none focus:border-[#0084FF] resize-none"
+                />
+              </div>
+
+              <div className="flex justify-end w-full">
+                <button
+                  type="submit"
+                  disabled={creating}
+                  className="h-9 px-4 rounded-xl bg-[#0084FF] text-white text-[12px] font-bold flex items-center gap-1.5 hover:bg-[#0073E6] transition-all disabled:opacity-50 cursor-pointer"
+                >
+                  {creating ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Deploying Agent Wallet & Setting Daily Limit...
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-3.5 h-3.5" />
+                      Create Agent
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+
+            {/* List of Agents */}
+            {agents.length === 0 ? (
+              <div className="text-center py-10 border-2 border-dashed border-gray-100 rounded-2xl">
+                <User className="w-8 h-8 text-neutral-300 mx-auto mb-2" />
+                <div className="text-[13px] font-medium text-neutral-500">No agents registered yet</div>
+                <div className="text-[11px] text-neutral-400 mt-0.5">Use the form above to deploy your first Agent Wallet</div>
+              </div>
+            ) : (
+              <div className="grid gap-3 max-h-[350px] overflow-y-auto pr-1">
+                {agents.map((agent) => {
+                  const active = activeAgentId === agent.id;
+                  const hasBalance = parseFloat(agent.balanceUsdc) > 0;
+                  return (
+                    <div
+                      key={agent.id}
+                      onClick={() => selectActive(agent)}
+                      className={`flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl border transition-all cursor-pointer ${
+                        active
+                          ? "border-[#0084FF] bg-blue-50/20 shadow-sm ring-1 ring-blue-500/10"
+                          : "border-gray-100 bg-white hover:border-gray-200"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-[14px] ${
+                          active ? "bg-[#0084FF] text-white" : "bg-neutral-100 text-neutral-500"
+                        }`}>
+                          {agent.persona === "business" ? "💼" : agent.persona === "web3" ? "🌐" : "📝"}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[14px] font-bold text-neutral-800 leading-tight">{agent.name}</span>
+                            {active && (
+                              <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[9px] font-bold text-emerald-600">
+                                <CheckCircle2 className="w-2.5 h-2.5" /> Active Run
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] font-mono text-neutral-400 mt-1">
+                            Wallet: {agent.address}
+                          </div>
+                          {agent.instructions && (
+                            <div className="text-[11px] text-neutral-500 italic mt-1 max-w-[280px] sm:max-w-[400px] truncate">
+                              Prompt: {agent.instructions}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-4">
+                        {/* Metrics */}
+                        <div className="flex gap-3">
+                          <div className="text-right">
+                            <div className="text-[9px] font-bold uppercase text-neutral-400">Balance</div>
+                            <div className="text-[13px] font-bold text-neutral-700">
+                              {agent.balanceUsdc} USDC
+                            </div>
+                          </div>
+                          <div className="text-right border-l pl-3">
+                            <div className="text-[9px] font-bold uppercase text-neutral-400">Daily Cap</div>
+                            <div className="text-[13px] font-bold text-neutral-700">
+                              {agent.remainingBudget} / 5.00 Left
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={() => fundAgent(agent)}
+                            className={`px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 transition-all ${
+                              hasBalance
+                                ? "bg-[#0084FF] text-white hover:bg-[#006EE6] shadow-sm"
+                                : "bg-[#0084FF]/10 text-[#0084FF] hover:bg-[#0084FF]/20"
+                            }`}
+                            type="button"
+                          >
+                            <Coins className="w-3.5 h-3.5" />
+                            Top Up
+                          </button>
+                          <button
+                            onClick={() => deleteAgent(agent.id)}
+                            className="p-2 rounded-xl text-neutral-400 hover:bg-red-50 hover:text-red-500 transition-all cursor-pointer"
+                            type="button"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
         )}
       </div>
 
