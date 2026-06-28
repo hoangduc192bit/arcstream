@@ -23,7 +23,25 @@ export async function verifyTransactionOnChain(
   }
 
   try {
-    const receipt = await publicClient.getTransactionReceipt({ hash });
+    let receipt = null;
+    let retries = 5;
+    while (retries > 0) {
+      try {
+        receipt = await publicClient.getTransactionReceipt({ hash });
+        if (receipt) break;
+      } catch (e) {
+        console.warn(`x402: Receipt not found yet for ${txHash}, retrying... (${retries} left)`);
+      }
+      retries--;
+      if (retries > 0) {
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    }
+
+    if (!receipt) {
+      console.error("x402: Failed to fetch transaction receipt after retries", txHash);
+      return false;
+    }
 
     if (receipt.status !== "success") {
       console.error("x402: Transaction failed on chain", txHash);
@@ -31,7 +49,7 @@ export async function verifyTransactionOnChain(
     }
 
     const latestBlock = await publicClient.getBlockNumber();
-    const confirmations = latestBlock - receipt.blockNumber + 1n;
+    const confirmations = latestBlock >= receipt.blockNumber ? latestBlock - receipt.blockNumber + 1n : 1n;
     if (confirmations < BigInt(minConfirmations)) {
       console.error("x402: Transaction does not have enough confirmations", txHash);
       return false;
