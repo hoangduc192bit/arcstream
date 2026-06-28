@@ -14,6 +14,7 @@ import {
   Shield,
   AlertCircle,
   RotateCcw,
+  Globe,
 } from "lucide-react";
 import type {
   ResearchAgentReport,
@@ -103,6 +104,16 @@ function StepCard({
     },
   }[step.status];
 
+  const registryMapping: Record<string, { name: string; url: string; registryId: string; provider: "1P" | "3P" }> = {
+    summarize: { name: "AgentMail (1P)", url: "https://agents.circle.com/services", registryId: "01", provider: "1P" },
+    "web-intel": { name: "Tavily Search (3P)", url: "https://agents.circle.com/services", registryId: "04", provider: "3P" },
+    analyze: { name: "Perplexity AI (3P)", url: "https://agents.circle.com/services", registryId: "08", provider: "3P" },
+    sentiment: { name: "Sentiment Scorer (3P)", url: "https://agents.circle.com/services", registryId: "12", provider: "3P" },
+    "report-writer": { name: "Creative Writer (3P)", url: "https://agents.circle.com/services", registryId: "15", provider: "3P" },
+  };
+
+  const circleTool = step.toolId ? registryMapping[step.toolId] : null;
+
   const resultLabel =
     step.status === "done" && step.result
       ? step.toolId === "analyze"
@@ -159,15 +170,33 @@ function StepCard({
             {resultLabel}
           </p>
         )}
-        <div className="mt-1 flex items-center gap-3 flex-wrap">
+        <div className="mt-2.5 flex items-center gap-2 flex-wrap">
           {step.durationMs !== null && (
             <span
-              className="text-[11px] text-neutral-400 font-mono"
+              className="text-[11px] text-neutral-400 font-mono mr-1"
               style={{ fontFamily: "var(--font-inter, Inter, sans-serif)" }}
             >
               {step.durationMs}ms
             </span>
           )}
+
+          {circleTool && (
+            <a
+              href={circleTool.url}
+              target="_blank"
+              rel="noreferrer"
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border transition-all ${
+                circleTool.provider === "1P"
+                  ? "bg-blue-50 border-blue-100 text-blue-600 hover:bg-blue-100/60"
+                  : "bg-purple-50 border-purple-100 text-purple-600 hover:bg-purple-100/60"
+              }`}
+              style={{ fontFamily: "var(--font-inter, Inter, sans-serif)" }}
+            >
+              <Globe className="w-3 h-3" />
+              Circle Registry: #{circleTool.registryId} ({circleTool.name})
+            </a>
+          )}
+
           {(() => {
             const tx = (step.result as { x402Payment?: { txHash?: string } } | null)?.x402Payment?.txHash;
             return tx ? (
@@ -175,10 +204,10 @@ function StepCard({
                 href={`https://testnet.arcscan.app/tx/${tx}`}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold text-[#0084FF] hover:underline"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-emerald-100 bg-emerald-50 text-[10px] font-mono font-semibold text-emerald-700 hover:bg-emerald-100 transition-colors"
                 style={{ fontFamily: "var(--font-inter, Inter, sans-serif)" }}
               >
-                x402 paid - {tx.slice(0, 10)}... open
+                Receipt: {tx.slice(0, 6)}...{tx.slice(-4)}
               </a>
             ) : null;
           })()}
